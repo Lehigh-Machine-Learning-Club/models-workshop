@@ -1,0 +1,18 @@
+{
+  "small": {
+    "architecture": "784 \u2192 64 \u2192 10",
+    "parameters": 50890,
+    "final_test_acc": 0.974,
+    "final_test_loss": 0.0981566540490836,
+    "avg_epoch_time": 5.145782295862833,
+    "total_time": 77.1867344379425
+  },
+  "large": {
+    "architecture": "784 \u2192 128 \u2192 64 \u2192 10",
+    "parameters": 109386,
+    "final_test_acc": 0.9776,
+    "final_test_loss": 0.10509966375821386,
+    "avg_epoch_time": 5.129771423339844,
+    "total_time": 76.94657135009766
+  }
+}
