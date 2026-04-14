@@ -1,6 +1,6 @@
 # Creating Your First Models: Interactive Workshop Dashboard
 
-An interactive educational dashboard built by the [Lehigh Machine Learning Club](https://github.com/Lehigh-Machine-Learning-Club) for our **Creating Your First Model** introductory workshop. Built entirely in Python.
+An interactive educational dashboard built by the [Lehigh Machine Learning Club](https://github.com/Lehigh-Machine-Learning-Club) for our **Creating Your First Models** introductory workshop. Built entirely in Python.
 
 **Our philosophy: if you can't see it, you can't understand it.** Every weight, gradient, and activation is visible - no black boxes.
 
