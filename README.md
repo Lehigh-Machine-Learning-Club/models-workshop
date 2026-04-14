@@ -1,103 +1,122 @@
-# Mechanistic Interpretability Dashboard
+# Creating Your First Models: Interactive Workshop Dashboard
 
-An interactive, educational dashboard built for the Lehigh Machine Learning Club to demystify machine learning models. Built completely in Python using [Streamlit](https://streamlit.io/) and [NumPy](https://numpy.org/).
+An interactive educational dashboard built by the [Lehigh Machine Learning Club](https://github.com/Lehigh-Machine-Learning-Club) for our **Creating Your First Model** introductory workshop. Built entirely in Python.
 
-Our philosophical approach is simple: **if you can't see it, you can't understand it**. We don't just show you how to train a model; we open the black box to show you its hidden mechanics, layer by layer, pixel by pixel, epoch by epoch.
+**Our philosophy: if you can't see it, you can't understand it.** Every weight, gradient, and activation is visible - no black boxes.
 
-## What We've Built
+---
 
-This application structurally unfolds the theory behind neural networks into two highly accessible, interactive phases:
+## Quick Start (Workshop Attendees)
 
-### Phase 1: Neural Networks Toy MLP
+You need **Python 3.9+** installed. Open a terminal and run:
 
-A **2-3-1 Multi-Layer Perceptron** built completely from scratch using NumPy. It tackles a synthetic 2D binary classification problem ("Poisonous Fruit Detector").
+```bash
+git clone https://github.com/Lehigh-Machine-Learning-Club/models-workshop.git
+cd models-workshop
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-- **The Engine:** All forward and backward propagation code is fully exposed (with pseudocode provided in-app).
-- **The Playground:** Users can tweak the 13 network parameters natively or watch them shift through pre-calculated training phases to witness the decision boundary adapt to the data in real-time.
-- **Interpretability:** Look inside the network at the individual "Feature Detectors" to see what specific logic each hidden neuron is looking for.
+The dashboard will open in your browser automatically. Use the **sidebar** to navigate between sections.
 
-### Phase 2: Neural Networks MNIST Scale-Up
+> **Trouble with the install?** If `streamlit-drawable-canvas` fails to install on your machine, everything else will still work - you just won't be able to use the "Draw Your Own Digit" canvas on the MNIST page. A file upload fallback is provided. You can skip it by installing everything else manually:
+> ```bash
+> pip install streamlit numpy pandas plotly scikit-learn torch torchvision matplotlib Pillow
+> ```
 
-Once the principles from Phase 1 are understood, we scale the exact same architectural concepts to 784 pixels and 109,000 parameters classifying the real-world **MNIST** dataset.
+---
 
-- **Architectural Analysis:** Comparing deep vs shallow networks head-to-head.
-- **Deconstruction:** 3Blue1Brown-inspired exploration into the hidden features and abstract representations neural networks create.
-- **Interactive Sandbox:** Draw your own digit and watch layer activations propagate dynamically, including an uncertainty/confidence threshold check for random scribbles.
+## What's Inside
 
-## Model Checkpoints & Pre-Computation Architecture
+The dashboard walks through four sections, building from simple to complex:
 
-The dashboard relies on pre-computed model checkpoints to ensure smooth animation and reliable scrubbing. By default, Streamlit’s execution model makes high-frequency state updates (like playing thousands of training epochs live) prone to stuttering. To resolve this, **we pre-compute the entire training runs** locally.
+| Section | What You'll Learn |
+|---|---|
+| **1. Linear Regression** | Fitting lines and curves to data. How models minimize error. |
+| **2. Classification** | KNN and Logistic Regression. Visualizing decision boundaries. |
+| **3. Neural Networks: Toy MLP** | A tiny 2-3-1 network built from scratch in NumPy. Watch it learn to classify "poisonous fruits" in real-time. |
+| **4. Neural Networks: MNIST** | Scale up to 784 pixels and 109K parameters. Explore how a trained network reads handwritten digits, then draw your own. |
 
-*(Note: the pre-calculated `models/` checkpoints are tracked directly in this repository, so no initial script-running is required for the application to function!)*
+No prior ML experience is assumed. Each section includes hover tooltips on technical terms, plain-English explanations alongside the math, and interactive controls so you can experiment yourself.
 
-If you wish to re-train the models or generate new checkpoints from scratch, you can run the provided scripts:
+---
 
-1. **Pre-computing the Toy MLP (Phase 1):**
+## Event Details
 
-   ```bash
-   python scripts/precompute_toy_training.py --max-epochs 10000 --checkpoint-every 5
-   ```
+- **Event:** Creating Your First Model - An Introductory Workshop
+- **Hosted by:** Lehigh Machine Learning Club
+- **Date:** April 15, 2025
+- **Location:** Packard Lab 416
+- **Focus areas:** Regression, Classification, and Neural Networks
 
-   *This trains the NumPy network simultaneously across 5 distinct activation functions, serializing the weights and decision boundaries chunk-by-chunk to `.npz` files.*
-2. **Training the Multi-Layer MNIST PyTorch Models (Phase 2):**
+---
 
-   ```bash
-   python scripts/train_mnist.py
-   ```
+## Technical Details (For Contributors)
 
-   *This downloads the MNIST dataset, trains both a shallow and deep architecture, compares them, saves the master `.pt` model state, and generates sample inference dictionaries for the visualizations.*
+### Architecture
 
-## Repository Structure
+- **Framework:** [Streamlit](https://streamlit.io/) 1.54+
+- **Visualization:** [Plotly](https://plotly.com/python/) for all interactive charts
+- **ML Backend:** NumPy (from-scratch MLP in Section 3), PyTorch (pretrained MNIST model in Section 4)
+- **UI:** Custom CSS hover tooltips, `st.popover()` glossary entries, `@st.fragment` for animation isolation
 
-A concise breakdown of how this codebase is organized:
+### How the Toy MLP Playground Works
 
-```text
-mechanistic-interpretability-dashboard/
+The dashboard does **not** train models live in the browser. Instead, training runs are pre-computed offline and saved as checkpoint files. This gives smooth scrubbing and animation (the Streamlit execution model would stutter otherwise). The checkpoints are committed directly to this repo, so cloning is all you need.
+
+To regenerate checkpoints from scratch:
+
+```bash
+# Toy MLP (Phase 1) - trains across 5 activation functions, saves weight snapshots
+python scripts/precompute_toy_training.py --max-epochs 10000 --checkpoint-every 5
+
+# MNIST (Phase 2) - trains shallow + deep architectures, saves model + inference artifacts
+python scripts/train_mnist.py
+```
+
+### Repository Structure
+
+```
+models-workshop/
+├── app.py                        # Landing page
+├── requirements.txt              # Dependencies
 │
-├── app.py                     # Main Streamlit landing page
-├── requirements.txt           # Project dependencies
-├── .gitignore                 # Git ignore config (models preserved)
-│
-├── pages/                     # Streamlit App Navigation Pages
+├── pages/                        # Dashboard sections (Streamlit multipage)
 │   ├── 1_Linear_Regression.py
 │   ├── 2_Classification.py
 │   ├── 3_Neural_Networks_Toy.py
 │   └── 4_Neural_Networks_MNIST.py
 │
-├── src/                       # Core Application Modules
-│   ├── mlp.py                 # Pure NumPy fully-connected network architecture
-│   ├── mnist_mlp.py           # PyTorch equivalent MNIST model architecture
-│   ├── precompute_toy.py      # Trajectory serialization tooling for Phase 1
-│   ├── data.py                # Dataset generators for the toy problems
-│   ├── visualizations.py      # Plotly functions and graphing for Phase 1
-│   ├── mnist_visualizations.py# Plotly functions and graphing for Phase 2
-│   └── ui_components.py       # Custom Streamlit helper widgets (CSS, tooltips)
+├── src/                          # Core modules
+│   ├── mlp.py                    # NumPy MLP (forward + backprop from scratch)
+│   ├── mnist_mlp.py              # PyTorch MNIST model
+│   ├── data.py                   # Synthetic dataset generators
+│   ├── precompute_toy.py         # Checkpoint serialization for toy MLP
+│   ├── visualizations.py         # Plotly charts (Sections 1-3)
+│   ├── mnist_visualizations.py   # Plotly charts (Section 4)
+│   └── ui_components.py          # Shared tooltips, metrics, dividers
 │
-├── scripts/                   # Model Generation & Training CLI Tools
+├── scripts/                      # Offline training scripts
 │   ├── precompute_toy_training.py
 │   └── train_mnist.py
 │
-├── models/                    # Saved Checkpoint Data (Tracked loosely via Git)
-│   ├── mnist_mlp.pt           # Compiled PyTorch master weights
-│   ├── toy_checkpoints_*.npz  # Frozen numpy trajectories of the toy model
-│   └── *.json                 # History and architecture breakdown metrics
+├── models/                       # Pre-computed checkpoints (committed to repo)
+│   ├── mnist_mlp.pt
+│   ├── toy_checkpoints_*.npz
+│   └── *.json
 │
-├── assets/                    # Educational images and diagrams
-└── documentations/            # Implementation plans, drafts, and notes 
+├── assets/                       # Educational images and diagrams
+└── documentations/               # Design notes and planning docs
 ```
 
-## Getting Started
+### Known Limitations
 
-1. Set up a local Python virtual environment:
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run the dashboard:
-   ```bash
-   streamlit run app.py
-   ```
+- Streamlit caps at roughly 10 FPS for complex Plotly charts during `@st.fragment` animation.
+- `streamlit-drawable-canvas` can be finicky on some platforms (Windows ARM, some Linux distros). File upload fallback is provided.
+- The `use_container_width` parameter is deprecated in Streamlit 1.54+; migration to `width='stretch'` is pending.
+
+---
+
+## License
+
+Built by the Lehigh Machine Learning Club. For educational use.
