@@ -496,7 +496,7 @@ if mode != "Manual Tweaking":
             "Max Epochs",
             min_value=300,
             max_value=8000,
-            value=5500,
+            value=2600,
             step=100,
             key="max_epochs_custom",
         )

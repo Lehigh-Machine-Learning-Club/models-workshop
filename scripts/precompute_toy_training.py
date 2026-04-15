@@ -22,7 +22,7 @@ from src.precompute_toy import precompute_training, save_checkpoints, DEFAULT_AC
 
 def main():
     parser = argparse.ArgumentParser(description='Pre-compute toy MLP training checkpoints')
-    parser.add_argument('--max-epochs', type=int, default=5500,
+    parser.add_argument('--max-epochs', type=int, default=2600,
                         help='Maximum training epochs per activation function')
     parser.add_argument('--checkpoint-every', type=int, default=2,
                         help='Save checkpoint every N epochs')
