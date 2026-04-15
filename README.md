@@ -26,6 +26,48 @@ The dashboard will open in your browser automatically. Use the **sidebar** to na
 
 ---
 
+## Code Setup
+
+You can set up the project in two ways:
+
+### Option A: Manual Setup
+
+```bash
+git clone https://github.com/Lehigh-Machine-Learning-Club/models-workshop.git
+cd models-workshop
+python3 -m venv .venv
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### Option B: Workshop Shell Scripts (Recommended)
+
+After cloning the repo, run one script from the project root.
+By default, scripts use committed model artifacts and only retrain/recompute if files are missing.
+
+- **macOS / Linux**
+  ```bash
+  bash shell_scripts/setup_workshop_unix.sh
+  ```
+
+- **Windows (cmd/.bat)**
+  ```bat
+  shell_scripts\setup_workshop_windows.bat
+  ```
+
+- **Windows (PowerShell fallback)**
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\shell_scripts\setup_workshop_windows.ps1
+  ```
+
+Optional script flags for fully fresh artifacts:
+- Unix: `--recompute-toy --recompute-mnist`
+- Windows (.bat): `--recompute-toy --recompute-mnist`
+- Windows (PowerShell): `-RecomputeToy -RecomputeMnist`
+
+---
+
 ## What's Inside
 
 The dashboard walks through four sections, building from simple to complex:
@@ -113,6 +155,11 @@ models-workshop/
 ├── scripts/                      # Offline training scripts
 │   ├── precompute_toy_training.py
 │   └── train_mnist.py
+│
+├── shell_scripts/                # Cross-platform workshop setup scripts
+│   ├── setup_workshop_unix.sh
+│   ├── setup_workshop_windows.bat
+│   └── setup_workshop_windows.ps1
 │
 ├── models/                       # Pre-computed checkpoints (committed to repo)
 │   ├── mnist_mlp.pt
