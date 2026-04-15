@@ -22,9 +22,17 @@ from src.mlp import MLP, ACTIVATIONS, sigmoid
 GRID_PAD = 0.1
 GRID_RESOLUTION = 50  # Resolution for serialized decision boundary
 
+DEFAULT_ACTIVATION_LRS = {
+    'Sigmoid': 4.0,
+    'ReLU': 0.1,
+    'Tanh': 1.7,
+    'None (Linear)': 1.6,
+    'Step Function': 1.6,
+}
+
 
 def precompute_training(X, y, activation_name='Sigmoid', lr=0.5,
-                        max_epochs=10000, checkpoint_every=5, seed=42,
+                        max_epochs=3000, checkpoint_every=5, seed=42,
                         grid_resolution=GRID_RESOLUTION,
                         early_stop_patience=200, convergence_threshold=1e-6):
     """
@@ -119,20 +127,20 @@ def precompute_training(X, y, activation_name='Sigmoid', lr=0.5,
         else:
             epochs_since_improvement += 1
 
-        if epochs_since_improvement >= early_stop_patience and acc >= 0.99:
-            # Capture final state if not already captured
-            if ckpt_epochs[-1] != epoch:
-                Z = mlp.forward(grid_points, activation_name).reshape(xx.shape)
-                mlp.forward(X, activation_name)
-                ckpt_epochs.append(epoch)
-                ckpt_W1.append(mlp.W1.copy())
-                ckpt_b1.append(mlp.b1.copy())
-                ckpt_W2.append(mlp.W2.copy())
-                ckpt_b2.append(mlp.b2.copy())
-                ckpt_losses.append(loss)
-                ckpt_accs.append(acc)
-                ckpt_boundaries.append(Z)
-            break
+        # if epochs_since_improvement >= early_stop_patience and acc >= 0.99:
+        #     # Capture final state if not already captured
+        #     if ckpt_epochs[-1] != epoch:
+        #         Z = mlp.forward(grid_points, activation_name).reshape(xx.shape)
+        #         mlp.forward(X, activation_name)
+        #         ckpt_epochs.append(epoch)
+        #         ckpt_W1.append(mlp.W1.copy())
+        #         ckpt_b1.append(mlp.b1.copy())
+        #         ckpt_W2.append(mlp.W2.copy())
+        #         ckpt_b2.append(mlp.b2.copy())
+        #         ckpt_losses.append(loss)
+        #         ckpt_accs.append(acc)
+        #         ckpt_boundaries.append(Z)
+        #     break
 
         if acc >= 1.0:
             if ckpt_epochs[-1] != epoch:

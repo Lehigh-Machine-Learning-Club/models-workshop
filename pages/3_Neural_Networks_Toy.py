@@ -16,11 +16,14 @@ import os
 
 from src.data import get_poisonous_fruit_data, get_linear_baseline_accuracy
 from src.mlp import MLP, ACTIVATIONS, ACTIVATION_DESCRIPTIONS
-from src.precompute_toy import load_checkpoints, restore_mlp_from_checkpoint
+from src.precompute_toy import (
+    load_checkpoints, restore_mlp_from_checkpoint,
+    precompute_training, DEFAULT_ACTIVATION_LRS,
+)
 from src.visualizations import (
-    plot_decision_boundary_from_grid, plot_network_graph,
+    plot_decision_boundary_from_grid, plot_decision_boundary, plot_network_graph,
     plot_activation_gallery, plot_activation_curve,
-    plot_loss_curve, plot_neuron_boundaries,
+    plot_loss_curve,
     plot_linear_failure, plot_sample_flow,
 )
 from src.ui_components import (
@@ -62,6 +65,19 @@ def load_checkpoint_data(activation_name):
     return None
 
 
+@st.cache_data(show_spinner=False)
+def compute_checkpoint_data_cached(X, y, activation_name, lr, max_epochs, checkpoint_every, seed):
+    """Run training on-demand and cache by full config tuple."""
+    return precompute_training(
+        X, y,
+        activation_name=activation_name,
+        lr=lr,
+        max_epochs=max_epochs,
+        checkpoint_every=checkpoint_every,
+        seed=seed,
+    )
+
+
 # ────────────────────────────────────────────────────────
 # Session State Initialization
 # ────────────────────────────────────────────────────────
@@ -69,10 +85,6 @@ if 'X' not in st.session_state:
     X, y = get_poisonous_fruit_data()
     st.session_state.X = X
     st.session_state.y = y
-if 'is_playing' not in st.session_state:
-    st.session_state.is_playing = False
-if 'training_done' not in st.session_state:
-    st.session_state.training_done = False
 
 X = st.session_state.X
 y = st.session_state.y
@@ -181,12 +193,14 @@ with col_perc_text:
     st.caption("↳ Same as logistic regression! The perceptron IS a generalized linear model with a flexible activation.")
     
     st.markdown(f"""
-    **The key insight**: a single perceptron can only learn a linear boundary — just like logistic regression. 
-    But when we **stack** multiple perceptrons into layers, the network can learn 
-    {tip("non-linear boundaries", "Decision boundaries that curve, bend, and wrap around data clusters — impossible for any single linear model to achieve.")} 
-    that are far more powerful.
+    **Why activation functions matter so much:** without a non-linearity, every layer is just another linear transform.
+    Stacking linear layers still gives one big linear function, so the model cannot bend around our moon-shaped fruit clusters.
     
-    This is called a **Multi-Layer Perceptron (MLP)** — and it's the foundation of modern deep learning.
+    Once we add non-linear activations in the hidden layer, each neuron becomes a soft gate that turns different regions
+    of feature space on/off. Combining several gates lets the network build a curved boundary.
+    
+    This is exactly why, in our toy experiments, some activation + learning-rate pairs converge well and others stall:
+    the activation controls gradient flow and expressivity, while learning rate controls update stability.
     """, unsafe_allow_html=True)
 
 with col_perc_img:
@@ -196,7 +210,28 @@ with col_perc_img:
     else:
         st.info("Place your perceptron diagram at `assets/perceptron.webp`")
 
-# ── B.2: Types of NNs and scope ──
+# ── B.2: Activation Function Gallery ──
+st.markdown("---")
+st.markdown("#### Activation Function Gallery")
+st.markdown(f"""
+In this toy MLP, the hidden activation determines **what kind of features neurons can represent** and
+**how usable the gradients are during training**.
+
+- Better gradient flow -> faster, smoother convergence.
+- Poor gradient signal (or saturated/flat regions) -> very slow updates or training plateaus.
+- No meaningful non-linearity -> boundary behaves close to a linear classifier.
+
+That is why this dashboard lets you compare activations side-by-side while also tuning learning rate.
+""", unsafe_allow_html=True)
+
+fig_gallery = plot_activation_gallery()
+st.plotly_chart(fig_gallery, key="act_gallery", config={'displayModeBar': False})
+
+with st.expander("Activation function details", expanded=False):
+    for name, desc in ACTIVATION_DESCRIPTIONS.items():
+        st.markdown(f"**{name}:** {desc}")
+
+# ── B.3: Types of NNs and scope ──
 st.markdown("---")
 st.markdown("""
 #### Types of Neural Networks
@@ -214,7 +249,7 @@ Neural networks come in many architectures, each designed for specific types of 
 > then a larger 784→128→64→10 MNIST digit classifier (Phase 2).
 """)
 
-# ── B.3: Our Toy Network Architecture ──
+# ── B.4: Our Toy Network Architecture ──
 st.markdown("---")
 st.markdown("#### Our Toy Neural Network: 2-3-1 Architecture")
 
@@ -253,7 +288,7 @@ with col_arch_viz:
     st.plotly_chart(fig_init_net, key="init_network", config={'displayModeBar': False})
     st.caption("The 2-3-1 network with random initial weights (before training). Edge thickness = weight magnitude, color = sign.")
 
-# ── B.4: Forward pass → Cost → Gradient Descent → Backprop ──
+# ── B.5: Forward pass → Cost → Gradient Descent → Backprop ──
 st.markdown("---")
 
 col_forward, col_cost_intro = st.columns([1, 1])
@@ -275,44 +310,23 @@ with col_forward:
 with col_cost_intro:
     st.markdown("#### Step 2: Turn Error Into a Single Number (Cost)")
     st.markdown("""
-    A prediction by itself is not enough. We need one scalar number that says:
-    **"How bad are the model's predictions right now?"**
+    We need one score that answers:
+    **"How surprised should the model be by the true label?"**
     """)
 
     math_block(
         r"\mathcal{L} = -\frac{1}{N}\sum\left[y\log(\hat{y}) + (1-y)\log(1-\hat{y})\right]",
-        "Binary Cross-Entropy (BCE): small when predictions match labels, large when confidently wrong"
+        "Binary Cross-Entropy (BCE): rewards confident correct predictions, strongly penalizes confident mistakes."
     )
 
-    st.markdown("""
-    This scalar objective is our optimization target. Training now becomes:
-    **find parameter values that make this cost as low as possible**.
-    """)
-
-st.markdown("---")
-st.markdown("#### Why Cost Functions Matter")
-
-col_cost_img, col_cost_text = st.columns([1.25, 1])
-
-with col_cost_img:
-    cost_img_path = os.path.join(ASSETS_DIR, "5. NN_Cost.png")
-    if os.path.exists(cost_img_path):
-        st.image(
-            cost_img_path,
-            caption="Comparing the prediction vector with the true one-hot target produces a numerical cost."
-        )
-    else:
-        st.info("Cost function illustration not found — place it at `assets/5. NN_Cost.png`")
-
-with col_cost_text:
     st.markdown(f"""
-    Intuition:
-    - The network outputs a full vector of probabilities.
-    - The true label is represented as a one-hot target vector.
-    - The {tip("cost function", "A function that maps model predictions and true labels to a single scalar value that measures how wrong the model is. Lower is better.")} compares those two vectors.
+    Intuition for one example:
+    - True label = 1 and model predicts 0.99 -> tiny penalty
+    - True label = 1 and model predicts 0.01 -> huge penalty
+    - True label = 0 behaves symmetrically
 
-    If the model puts high probability on the wrong class, cost jumps up.
-    If it puts high probability on the correct class, cost goes down.
+    BCE is ideal here because this is {tip("binary classification", "A two-class prediction problem. Here, the model estimates P(Poisonous).")} with probabilistic outputs.
+    We then average over all samples, and gradient descent keeps updating parameters to push this average cost down.
     """, unsafe_allow_html=True)
 
 st.markdown("---")
@@ -358,7 +372,7 @@ This loop repeats for many **epochs** (full passes over the dataset).
 As cost decreases, the decision boundary bends into a shape that separates safe vs poisonous fruits.
 """)
 
-# ── B.5: General NN Pseudocode ──
+# ── B.6: General NN Pseudocode ──
 st.markdown("---")
 st.markdown("#### General Neural Network Pseudocode")
 st.caption("This is the complete training loop for any feedforward network — our 2-3-1 MLP follows exactly this template.")
@@ -403,7 +417,7 @@ def predict(x_new, W1, b1, W2, b2):
     return sigmoid(Z2)       # Probability of being poisonous
 """, language="python")
 
-# ── B.6: Features vs Hidden Features ──
+# ── B.7: Features vs Hidden Features ──
 st.markdown("---")
 st.markdown("#### Features vs. Hidden Features")
 
@@ -423,21 +437,6 @@ The final output neuron combines these three implicit features (via W₂) to mak
 that the programmer never had to manually engineer.
 """, unsafe_allow_html=True)
 
-# ── B.7: Activation Function Gallery ──
-st.markdown("---")
-st.markdown("#### Activation Function Gallery")
-st.markdown(f"""
-The {tip("activation function", "The mathematical function applied to each neuron's output. Without it, stacking layers has no benefit — the entire network collapses to a single linear transformation.")} 
-is what gives the network its power to learn curves. Here are all 5 options and their derivatives:
-""", unsafe_allow_html=True)
-
-fig_gallery = plot_activation_gallery()
-st.plotly_chart(fig_gallery, key="act_gallery", config={'displayModeBar': False})
-
-with st.expander("Activation function details", expanded=False):
-    for name, desc in ACTIVATION_DESCRIPTIONS.items():
-        st.markdown(f"**{name}:** {desc}")
-
 section_divider()
 
 # ════════════════════════════════════════════════════════
@@ -447,8 +446,8 @@ section_header("The Playground", "Train the network and watch it learn", "")
 
 st.markdown("""
 **Try it yourself!** First, try adjusting the 13 parameter sliders manually (below) to see 
-if you can find a good fit. Then switch to "Auto-Play" mode to watch gradient descent 
-do it automatically — smoothly scrubbing through 10,000 pre-computed training epochs.
+if you can find a good fit. Then switch to checkpoint playback mode and scrub through
+the pre-computed gradient-descent trajectory epoch by epoch.
 """)
 
 # ── Sidebar Controls ──
@@ -461,27 +460,11 @@ activation_name = st.sidebar.selectbox(
     help="Changes the non-linear function applied in the hidden layer. Each activation produces different decision boundary shapes."
 )
 
-# Load checkpoints for selected activation
-checkpoint_data = load_checkpoint_data(activation_name)
-
-if checkpoint_data is None:
-    st.error(f"Pre-computed checkpoints not found for '{activation_name}'. Run `python scripts/precompute_toy_training.py` first.")
-    st.stop()
-
-n_checkpoints = len(checkpoint_data['epochs'])
-stored_lr = float(checkpoint_data['lr'])
-
-st.sidebar.caption(f"Pre-computed: {n_checkpoints} checkpoints, lr={stored_lr}, max epoch={int(checkpoint_data['epochs'][-1])}")
-
-# ── Playback Mode Toggle ──
-st.sidebar.markdown("---")
-st.sidebar.markdown("#### Playback Mode")
-
 mode = st.sidebar.radio(
     "Mode",
-    ["Manual Tweaking", "Pre-computed Playback"],
-    index=1,
-    help="Manual: adjust weights by hand. Playback: scrub through pre-computed training epochs."
+    ["Manual Tweaking", "Pre-computed Checkpoints", "On-demand Training"],
+    index=0,
+    help="Choose how you want to explore: manual parameter edits, pre-computed checkpoints, or custom on-demand training."
 )
 
 # Plotly config to reduce flickering
@@ -491,64 +474,82 @@ PLOTLY_CONFIG = {
     'scrollZoom': False,
 }
 
-if mode == "Pre-computed Playback":
+if mode != "Manual Tweaking":
     # ── Checkpoint slider ──
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### Training Playback")
-    
-    # Speed control
-    playback_speed = st.sidebar.select_slider(
-        "Playback Speed",
-        options=[1, 2, 5, 10, 20, 50],
-        value=5,
-        help="How many checkpoints to advance per animation tick."
-    )
 
-    # Play/Pause/Reset
-    col_play, col_reset = st.sidebar.columns(2)
-    
-    def toggle_play():
-        st.session_state.is_playing = not st.session_state.is_playing
-        if st.session_state.is_playing:
-            st.session_state.training_done = False
+    if mode == "On-demand Training":
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("#### On-demand Training Config")
+        default_lr = float(DEFAULT_ACTIVATION_LRS.get(activation_name, 1.0))
+        lr_custom = st.sidebar.slider(
+            "Learning Rate",
+            min_value=0.01,
+            max_value=8.0,
+            value=default_lr,
+            step=0.01,
+            key=f"lr_custom_{activation_name}",
+            help="Higher is faster until it becomes unstable. Tune per activation function."
+        )
+        max_epochs_custom = st.sidebar.slider(
+            "Max Epochs",
+            min_value=300,
+            max_value=8000,
+            value=5500,
+            step=100,
+            key="max_epochs_custom",
+        )
+        checkpoint_every_custom = st.sidebar.slider(
+            "Checkpoint Every N Epochs",
+            min_value=1,
+            max_value=25,
+            value=2,
+            step=1,
+            key="checkpoint_every_custom",
+        )
+        seed_custom = st.sidebar.number_input(
+            "Seed",
+            min_value=0,
+            max_value=9999,
+            value=42,
+            step=1,
+            key="seed_custom",
+        )
+        with st.spinner("Running on-demand training and caching checkpoints..."):
+            checkpoint_data = compute_checkpoint_data_cached(
+                X, y, activation_name,
+                float(lr_custom),
+                int(max_epochs_custom),
+                int(checkpoint_every_custom),
+                int(seed_custom),
+            )
+        source_label = "On-demand"
+    else:
+        checkpoint_data = load_checkpoint_data(activation_name)
+        if checkpoint_data is None:
+            st.error(f"Pre-computed checkpoints not found for '{activation_name}'. Run `python scripts/precompute_toy_training.py` first.")
+            st.stop()
+        source_label = "Pre-computed"
 
-    def do_reset():
-        st.session_state.is_playing = False
-        st.session_state.training_done = False
-        st.session_state.ckpt_idx = 0
-    
-    play_label = "Pause" if st.session_state.is_playing else "Play"
-    if st.session_state.training_done:
-        play_label = "Done"
-    
-    col_play.button(play_label, use_container_width=True, on_click=toggle_play,
-                    disabled=st.session_state.training_done)
-    col_reset.button("Reset", use_container_width=True, on_click=do_reset)
+    n_checkpoints = len(checkpoint_data['epochs'])
+    stored_lr = float(checkpoint_data['lr'])
+    st.sidebar.caption(f"{source_label}: {n_checkpoints} checkpoints, lr={stored_lr}, max epoch={int(checkpoint_data['epochs'][-1])}")
     
     if 'ckpt_idx' not in st.session_state:
         st.session_state.ckpt_idx = 0
+
+    # Keep index valid if switching sources/configs
+    st.session_state.ckpt_idx = min(st.session_state.ckpt_idx, n_checkpoints - 1)
     
     # Slider for manual scrubbing
     ckpt_idx = st.sidebar.slider(
         "Training Step", 0, n_checkpoints - 1,
         st.session_state.ckpt_idx,
         key="ckpt_slider",
-        help="Scrub through the pre-computed training trajectory."
+        help="Scrub through the selected training trajectory."
     )
     st.session_state.ckpt_idx = ckpt_idx
-    
-    # Auto-advance via fragment
-    @st.fragment(run_every="80ms")
-    def auto_advance():
-        if st.session_state.is_playing and not st.session_state.training_done:
-            new_idx = st.session_state.ckpt_idx + playback_speed
-            if new_idx >= n_checkpoints:
-                new_idx = n_checkpoints - 1
-                st.session_state.is_playing = False
-                st.session_state.training_done = True
-            st.session_state.ckpt_idx = new_idx
-    
-    auto_advance()
     
     # Sample selector
     st.sidebar.markdown("---")
@@ -568,14 +569,12 @@ if mode == "Pre-computed Playback":
     # Restore MLP for network graph
     mlp = restore_mlp_from_checkpoint(checkpoint_data, idx)
     
-    # Status
-    status_icon = "" if st.session_state.training_done else ("" if st.session_state.is_playing else "")
     metric_row({
         "Epoch": f"{epoch} / {int(checkpoint_data['epochs'][-1])}",
         "Loss": f"{loss:.4f}",
         "Accuracy": f"{acc*100:.1f}%",
         "Parameters": "13",
-        "Status": f"{status_icon} {'Playing' if st.session_state.is_playing else ('Done' if st.session_state.training_done else 'Paused')}",
+        "Status": "Checkpoint Scrubbing",
     })
     
     st.markdown("")
@@ -644,7 +643,7 @@ if mode == "Pre-computed Playback":
     else:
         fig_loss = plot_loss_curve([], [])
         st.plotly_chart(fig_loss, key="loss_curve_empty", config=PLOTLY_CONFIG)
-        st.caption("Press Play or drag the slider to see the training curves develop.")
+        st.caption("Drag the training-step slider to see the training curves develop.")
     
     # ── Sample Flow Inspector ──
     st.markdown("#### Sample Flow Inspector")
@@ -655,7 +654,7 @@ if mode == "Pre-computed Playback":
     fig_flow = plot_sample_flow(mlp, x_sample.flatten(), activation_name, sample_idx, y_label)
     st.plotly_chart(fig_flow, key="flow_play", config=PLOTLY_CONFIG)
 
-else:
+if mode == "Manual Tweaking":
     # ══ MANUAL TWEAKING MODE ══
     st.sidebar.markdown("---")
     st.sidebar.markdown("#### Manual Parameter Tweaking")
@@ -754,37 +753,58 @@ section_divider()
 # ════════════════════════════════════════════════════════
 # SECTION E: "What Did the Neurons Learn?"
 # ════════════════════════════════════════════════════════
-section_header("What Did the Neurons Learn?", "Interpretability — peeking inside the hidden layer", "")
+section_header("What Did the Neurons Learn?", "Interpretability — how three simple gates form a curved boundary", "")
 
 # Use the final checkpoint's MLP for this section
-if mode == "Pre-computed Playback":
+if mode != "Manual Tweaking":
     final_mlp = restore_mlp_from_checkpoint(checkpoint_data, st.session_state.ckpt_idx)
 else:
     final_mlp = st.session_state.manual_mlp
 
 st.markdown(f"""
-After training, each {tip("hidden neuron", "A node in the hidden layer that computes a weighted sum of inputs, adds a bias, and applies an activation function. Each neuron learns to detect a specific feature combination.")} 
-in our network has specialized. By examining their weights, we can understand **what pattern each neuron has learned to detect**.
+Each {tip("hidden neuron", "A node in the hidden layer that computes a weighted sum of inputs, adds a bias, and applies an activation function. Each neuron learns a soft linear test in feature space.")} defines a line:
+`w_0*x_1 + w_1*x_2 + b = 0`.
+
+One side of that line activates the neuron more, the other side activates it less.
+The output neuron then combines those three responses to produce `P(Poisonous)`.
 """, unsafe_allow_html=True)
 
-col_labels, col_boundaries = st.columns([1, 1.5])
-
-with col_labels:
-    st.markdown("#### Neuron Identities")
-    nicknames, details = final_mlp.get_neuron_labels()
-
-    for j in range(3):
-        st.markdown(f"""
-        **Hidden Neuron {j}: {nicknames[j]}**  
-        {details[j]}  
-        Weight on output: W2[{j},0] = `{final_mlp.W2[j, 0]:.3f}`
-        """)
+final_mlp.forward(X, activation_name)
+final_loss, final_acc = final_mlp.compute_loss_accuracy(y)
+col_boundaries, col_labels = st.columns([1.4, 1])
 
 with col_boundaries:
-    st.markdown("#### Individual Neuron Activation Maps")
-    st.caption("Each neuron fires in a different region of the input space. The final decision boundary is a combination of all three.")
-    fig_neuron = plot_neuron_boundaries(final_mlp, X, y, activation_name)
-    st.plotly_chart(fig_neuron, key="neuron_maps", config=PLOTLY_CONFIG)
+    st.markdown("#### Combined Decision Boundary + Hidden Gates")
+    st.caption("Dashed lines are the three hidden-neuron thresholds (`z_j = 0`). Their weighted combination creates the final curved classifier.")
+    fig_interp = plot_decision_boundary(
+        final_mlp, X, y, activation_name,
+        0, final_loss, final_acc,
+        grid_resolution=60,
+        show_neuron_lines=True
+    )
+    st.plotly_chart(fig_interp, key="neuron_interp_boundary", config=PLOTLY_CONFIG)
+
+with col_labels:
+    st.markdown("#### Interpreting Each Hidden Neuron")
+    boundaries = final_mlp.get_neuron_boundaries(activation_name)
+
+    for bnd in boundaries:
+        j = bnd['neuron_idx']
+        w0 = final_mlp.W1[0, j]
+        w1 = final_mlp.W1[1, j]
+        bias = final_mlp.b1[0, j]
+        out_weight = final_mlp.W2[j, 0]
+
+        if out_weight >= 0:
+            output_effect = "pushes prediction toward **Poisonous** when active"
+        else:
+            output_effect = "pushes prediction toward **Safe** when active"
+
+        st.markdown(f"""
+        **Neuron {j}**
+        - Gate equation: `{w0:+.2f}*x1 + {w1:+.2f}*x2 + {bias:+.2f} = 0`
+        - Output connection: `W2[{j},0] = {out_weight:+.3f}` -> {output_effect}
+        """)
 
 # Bridge to Phase 2
 st.markdown("---")

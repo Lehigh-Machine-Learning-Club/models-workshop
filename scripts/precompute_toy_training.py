@@ -17,23 +17,14 @@ import argparse
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.data import get_poisonous_fruit_data
-from src.precompute_toy import precompute_training, save_checkpoints
-
-
-ACTIVATION_CONFIGS = {
-    'Sigmoid': {'lr': 2.0},
-    'ReLU': {'lr': 1.0},
-    'Tanh': {'lr': 1.0},
-    'None (Linear)': {'lr': 0.5},
-    'Step Function': {'lr': 0.5},
-}
+from src.precompute_toy import precompute_training, save_checkpoints, DEFAULT_ACTIVATION_LRS
 
 
 def main():
     parser = argparse.ArgumentParser(description='Pre-compute toy MLP training checkpoints')
-    parser.add_argument('--max-epochs', type=int, default=10000,
+    parser.add_argument('--max-epochs', type=int, default=5500,
                         help='Maximum training epochs per activation function')
-    parser.add_argument('--checkpoint-every', type=int, default=5,
+    parser.add_argument('--checkpoint-every', type=int, default=2,
                         help='Save checkpoint every N epochs')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed for weight initialization')
@@ -48,7 +39,7 @@ def main():
 
     X, y = get_poisonous_fruit_data()
 
-    activations_to_run = args.activations or list(ACTIVATION_CONFIGS.keys())
+    activations_to_run = args.activations or list(DEFAULT_ACTIVATION_LRS.keys())
 
     print("=" * 60)
     print("Toy MLP Training Pre-Computation")
@@ -62,11 +53,11 @@ def main():
     print()
 
     for act_name in activations_to_run:
-        if act_name not in ACTIVATION_CONFIGS:
+        if act_name not in DEFAULT_ACTIVATION_LRS:
             print(f"⚠️  Unknown activation '{act_name}', skipping.")
             continue
 
-        lr = ACTIVATION_CONFIGS[act_name]['lr']
+        lr = DEFAULT_ACTIVATION_LRS[act_name]
         print(f"{'─' * 60}")
         print(f"  Computing: {act_name}  (lr={lr})")
 

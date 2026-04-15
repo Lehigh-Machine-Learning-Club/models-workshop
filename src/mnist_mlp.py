@@ -41,8 +41,8 @@ class MNIST_MLP_Small(nn.Module):
 
 
 class MNIST_MLP(nn.Module):
-    """Dual hidden layer: 784 → 128 → 64 → 10"""
-    def __init__(self, hidden1=128, hidden2=64):
+    """Dual hidden layer: 784 → 16 → 16 → 10 (compact interpretability-first model)."""
+    def __init__(self, hidden1=16, hidden2=16):
         super().__init__()
         self.fc1 = nn.Linear(784, hidden1)
         self.fc2 = nn.Linear(hidden1, hidden2)
@@ -127,7 +127,7 @@ class MNIST_MLP(nn.Module):
         return top_k_idx, acts[top_k_idx]
 
     @classmethod
-    def load_pretrained(cls, path, hidden1=128, hidden2=64):
+    def load_pretrained(cls, path, hidden1=16, hidden2=16):
         """Load a pretrained model from a saved state dict."""
         model = cls(hidden1=hidden1, hidden2=hidden2)
         model.load_state_dict(torch.load(path, map_location='cpu', weights_only=True))

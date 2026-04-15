@@ -53,8 +53,12 @@ def load_model():
     """Load the pretrained MNIST MLP model."""
     model_path = os.path.join(MODELS_DIR, 'mnist_mlp.pt')
     if os.path.exists(model_path):
-        model = MNIST_MLP.load_pretrained(model_path)
-        return model
+        try:
+            model = MNIST_MLP.load_pretrained(model_path)
+            return model
+        except RuntimeError:
+            st.error("Model checkpoint architecture mismatch. Re-train with `python scripts/train_mnist.py` for the 784→16→16→10 setup.")
+            return None
     else:
         st.error(f"Model not found at {model_path}. Run `python scripts/train_mnist.py` first.")
         return None
@@ -99,6 +103,69 @@ def load_training_data():
     return data
 
 
+def get_param_breakdown_rows(model):
+    """Return per-layer parameter metadata for the currently loaded model."""
+    h1 = model.hidden1
+    h2 = model.hidden2
+    layer_1_params = 784 * h1 + h1
+    layer_2_params = h1 * h2 + h2
+    layer_3_params = h2 * 10 + 10
+    total = layer_1_params + layer_2_params + layer_3_params
+    first_layer_share = 100.0 * layer_1_params / max(total, 1)
+    return {
+        'h1': h1,
+        'h2': h2,
+        'layer_1_params': layer_1_params,
+        'layer_2_params': layer_2_params,
+        'layer_3_params': layer_3_params,
+        'total': total,
+        'first_layer_share': first_layer_share,
+    }
+
+
+def preprocess_canvas_digit(image, threshold_frac=0.20):
+    """
+    Make freehand input more MNIST-like:
+    1) threshold + crop to ink bbox
+    2) resize glyph to ~20x20
+    3) center in a 28x28 canvas
+    """
+    from PIL import Image
+
+    img = np.asarray(image, dtype=np.float32)
+    if img.max() > 1.0:
+        img = img / 255.0
+    img = np.clip(img, 0.0, 1.0)
+
+    max_val = float(img.max())
+    if max_val <= 1e-6:
+        return np.zeros((28, 28), dtype=np.float32), 0.0
+
+    thr = threshold_frac * max_val
+    mask = img > thr
+    ink_ratio = float(mask.mean())
+    if not np.any(mask):
+        return np.zeros((28, 28), dtype=np.float32), 0.0
+
+    ys, xs = np.where(mask)
+    y0, y1 = ys.min(), ys.max() + 1
+    x0, x1 = xs.min(), xs.max() + 1
+    crop = img[y0:y1, x0:x1]
+
+    h, w = crop.shape
+    side = max(h, w)
+    pad_y = (side - h) // 2
+    pad_x = (side - w) // 2
+    square = np.pad(crop, ((pad_y, side - h - pad_y), (pad_x, side - w - pad_x)), mode='constant')
+
+    pil = Image.fromarray((square * 255).astype(np.uint8), mode='L')
+    glyph_20 = np.array(pil.resize((20, 20), Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
+
+    out = np.zeros((28, 28), dtype=np.float32)
+    out[4:24, 4:24] = glyph_20
+    return out, ink_ratio
+
+
 # ────────────────────────────────────────────────────────
 # Load everything
 # ────────────────────────────────────────────────────────
@@ -131,7 +198,7 @@ The key change isn't conceptual — it's **scale**:
 | Aspect | Phase 1 (Toy MLP) | Phase 2 (MNIST) |
 |--------|-------------------|-----------------|
 | Input features | 2 (spikiness, spottiness) | 784 (28×28 pixels) |
-| Hidden neurons | 3 | 128 → 64 (two layers) |
+| Hidden neurons | 3 | {model.hidden1} → {model.hidden2} (two layers) |
 | Output | 1 (binary: safe/poison) | 10 (digits 0-9) |
 | Parameters | 13 | {model.count_parameters():,} |
 | Dataset size | 200 samples | 70,000 images |
@@ -283,17 +350,21 @@ for epoch in range(15):
 st.markdown("---")
 st.markdown("#### Parameter Breakdown by Layer")
 
+param_info = get_param_breakdown_rows(model)
+h1 = param_info['h1']
+h2 = param_info['h2']
+
 st.markdown(f"""
 Our model has **{model.count_parameters():,} total learnable parameters**. Here's exactly where they live:
 
 | Layer | Input → Output | Weight Shape | Bias Shape | Param Count | Role |
 |-------|---------------|-------------|------------|-------------|------|
-| **Layer 1** (Input → Hidden 1) | 784 → 128 | 784 × 128 | 128 | **100,480** | Each of the 128 neurons learns a 784-weight "template" for a specific pixel pattern |
-| **Layer 2** (Hidden 1 → Hidden 2) | 128 → 64 | 128 × 64 | 64 | **8,256** | Combines first-layer features into higher-level digit components |
-| **Layer 3** (Hidden 2 → Output) | 64 → 10 | 64 × 10 | 10 | **650** | Maps abstract features to 10 digit probabilities |
+| **Layer 1** (Input → Hidden 1) | 784 → {h1} | 784 × {h1} | {h1} | **{param_info['layer_1_params']:,}** | First-pass stroke template detectors (edges, curves, local motifs) |
+| **Layer 2** (Hidden 1 → Hidden 2) | {h1} → {h2} | {h1} × {h2} | {h2} | **{param_info['layer_2_params']:,}** | Composes simple stroke cues into higher-level digit parts |
+| **Layer 3** (Hidden 2 → Output) | {h2} → 10 | {h2} × 10 | 10 | **{param_info['layer_3_params']:,}** | Converts abstract evidence into 10 digit logits |
 | **Total** | | | | **{model.count_parameters():,}** | |
 
-> **Notice the distribution**: ~92% of all parameters are in Layer 1 (the "feature detector" layer). 
+> **Notice the distribution**: ~{param_info['first_layer_share']:.1f}% of all parameters are in Layer 1 (the "feature detector" layer). 
 > This is because the input space is enormous (784 pixels) and each neuron needs a weight for every pixel.
 > The deeper layers are much smaller because they operate on compressed, abstract representations.
 """, unsafe_allow_html=True)
@@ -302,7 +373,7 @@ Our model has **{model.count_parameters():,} total learnable parameters**. Here'
 if 'history' in training_data:
     st.markdown("---")
     st.markdown("#### Training Curves")
-    st.caption("Loss decreases as the model learns; accuracy increases. Notice how both models converge within ~10 epochs.")
+    st.caption("Curves compare the baseline MLP and the compact 16×16 model. The compact model is easier to interpret but may trade off some peak accuracy.")
     fig_curves = plot_training_curves(training_data['history'])
     st.plotly_chart(fig_curves, key="training_curves", config=PLOTLY_CONFIG)
 
@@ -314,53 +385,60 @@ section_divider()
 section_header("Architecture Comparison", "Does a deeper network perform better?", "")
 
 st.markdown(f"""
-We trained **two different architectures** on the same data to compare their performance. 
+We trained **two architectures** on the same data: a wider single-hidden-layer baseline and a compact 16×16 two-layer model. 
 This is a common practice in ML — {tip("ablation study", "A systematic experiment where you vary one aspect of a model (e.g., depth, width) while keeping everything else constant, to understand the effect of that specific change.")} — 
-to understand how network depth affects accuracy, training time, and parameter efficiency.
+to understand trade-offs among accuracy, parameter count, and interpretability.
 """, unsafe_allow_html=True)
 
 if 'comparison' in training_data:
     comp = training_data['comparison']
+    comp_keys = list(comp.keys())
 
-    col_small, col_vs, col_large = st.columns([1, 0.3, 1])
+    if len(comp_keys) < 2:
+        st.warning("Comparison data is incomplete. Re-run `python scripts/train_mnist.py` to regenerate metrics.")
+    else:
+        key_a, key_b = comp_keys[0], comp_keys[1]
+        model_a = comp[key_a]
+        model_b = comp[key_b]
 
-    with col_small:
-        st.markdown("#### Model A: Small (1 Hidden Layer)")
-        st.markdown(f"**`{comp['small']['architecture']}`**")
-        metric_row({
-            "Test Accuracy": f"{comp['small']['final_test_acc']*100:.2f}%",
-            "Parameters": f"{comp['small']['parameters']:,}",
-            "Avg Epoch": f"{comp['small']['avg_epoch_time']:.2f}s",
-        })
+        col_a, col_vs, col_b = st.columns([1, 0.3, 1])
 
-    with col_vs:
-        st.markdown("")
-        st.markdown("")
-        st.markdown("###")
-        st.markdown("### vs")
+        with col_a:
+            st.markdown(f"#### Model A: {key_a.title()}")
+            st.markdown(f"**`{model_a['architecture']}`**")
+            metric_row({
+                "Test Accuracy": f"{model_a['final_test_acc']*100:.2f}%",
+                "Parameters": f"{model_a['parameters']:,}",
+                "Avg Epoch": f"{model_a['avg_epoch_time']:.2f}s",
+            })
 
-    with col_large:
-        st.markdown("#### Model B: Large (2 Hidden Layers) ✓")
-        st.markdown(f"**`{comp['large']['architecture']}`**")
-        metric_row({
-            "Test Accuracy": f"{comp['large']['final_test_acc']*100:.2f}%",
-            "Parameters": f"{comp['large']['parameters']:,}",
-            "Avg Epoch": f"{comp['large']['avg_epoch_time']:.2f}s",
-        })
+        with col_vs:
+            st.markdown("")
+            st.markdown("")
+            st.markdown("###")
+            st.markdown("### vs")
 
-    # Architecture comparison chart
-    st.markdown("---")
-    fig_comp = plot_architecture_comparison(comp)
-    st.plotly_chart(fig_comp, key="arch_comparison", config=PLOTLY_CONFIG)
+        with col_b:
+            st.markdown(f"#### Model B: {key_b.title()} ✓")
+            st.markdown(f"**`{model_b['architecture']}`**")
+            metric_row({
+                "Test Accuracy": f"{model_b['final_test_acc']*100:.2f}%",
+                "Parameters": f"{model_b['parameters']:,}",
+                "Avg Epoch": f"{model_b['avg_epoch_time']:.2f}s",
+            })
 
-    acc_diff = (comp['large']['final_test_acc'] - comp['small']['final_test_acc']) * 100
-    param_ratio = comp['large']['parameters'] / comp['small']['parameters']
-    
-    st.markdown(f"""
-    **Key Takeaway:** The larger model achieves **{acc_diff:.2f}% higher accuracy** but uses **{param_ratio:.1f}× more parameters**. 
-    For a simple dataset like MNIST, this is often a case of diminishing returns — 
-    but the deeper architecture captures more nuanced digit features.
-    """)
+        # Architecture comparison chart
+        st.markdown("---")
+        fig_comp = plot_architecture_comparison(comp)
+        st.plotly_chart(fig_comp, key="arch_comparison", config=PLOTLY_CONFIG)
+
+        acc_diff = (model_b['final_test_acc'] - model_a['final_test_acc']) * 100
+        param_ratio = model_b['parameters'] / max(model_a['parameters'], 1)
+
+        st.markdown(f"""
+        **Key Takeaway:** Model B differs by **{acc_diff:+.2f}%** test accuracy with **{param_ratio:.2f}×** the parameter count.
+        For this walkthrough, we prioritize **clear neuron-level interpretability** (compact hidden layers) while still keeping strong MNIST performance.
+        """)
 else:
     st.info("Architecture comparison data not found. Run `python scripts/train_mnist.py`.")
 
@@ -392,7 +470,7 @@ with col_3b1b_hidden_text:
     overlap with the neuron's positive weights, the neuron fires strongly. 
     When they overlap with negative weights, the neuron is suppressed.
     
-    The output layer then combines all 64 second-layer activations to 
+    The output layer then combines all second-layer activations to 
     decide which digit it's looking at — essentially voting based on 
     which feature detectors fired.
     """, unsafe_allow_html=True)
@@ -402,27 +480,66 @@ st.markdown("---")
 col_fmaps, col_inspect = st.columns([1.5, 1])
 
 with col_fmaps:
-    st.markdown("#### First Layer Feature Detectors (Top 16 by weight magnitude)")
-    feature_maps = model.get_feature_maps(layer_idx=0)  # (128, 28, 28)
+    st.markdown(f"#### Feature Detectors (Top {min(16, model.hidden1)} neurons by weight magnitude)")
+    feature_maps = model.get_feature_maps(layer_idx=0)  # (hidden1, 28, 28)
     fig_features = plot_feature_detector_grid(feature_maps, n_neurons=16)
     st.plotly_chart(fig_features, key="feature_maps", config=PLOTLY_CONFIG)
 
 with col_inspect:
-    st.markdown("#### Inspect a Specific Neuron")
-    neuron_idx = st.number_input("Neuron index (0-127)", 0, 127, 0, key="neuron_inspect")
+    st.markdown("#### Inspect Hidden Layers")
+    inspect_layer = st.radio(
+        "Layer to inspect",
+        ["Hidden Layer 1 (pixel-space detectors)", "Hidden Layer 2 (compositions of Layer-1 detectors)"],
+        key="mnist_inspect_layer",
+    )
 
-    if neuron_idx < len(feature_maps):
+    if inspect_layer.startswith("Hidden Layer 1"):
+        max_neuron_idx = max(0, len(feature_maps) - 1)
+        neuron_idx = st.number_input(
+            f"Neuron index (0-{max_neuron_idx})",
+            min_value=0,
+            max_value=max_neuron_idx,
+            value=0,
+            key="neuron_inspect_l1"
+        )
+
         fig_single = plot_pixel_heatmap(
             feature_maps[neuron_idx],
-            title=f"Neuron {neuron_idx} Receptive Field"
+            title=f"Layer 1 Neuron {neuron_idx} Receptive Field"
         )
-        st.plotly_chart(fig_single, key="neuron_single", config=PLOTLY_CONFIG)
+        st.plotly_chart(fig_single, key="neuron_single_l1", config=PLOTLY_CONFIG)
 
-    st.markdown(f"""
-    **Interpretation:** Red/positive regions are pixels that **excite** this neuron.  
-    Blue/negative regions are pixels that **inhibit** it.  
-    This neuron activates when it sees a specific stroke pattern in the handwritten digit.
-    """)
+        st.markdown(f"""
+        **Layer 1 interpretation:** Red/positive regions are pixels that excite this neuron.  
+        Blue/negative regions inhibit it.  
+        These are the closest thing to direct "stroke templates" in this MLP.
+        """)
+    else:
+        layer2_weights = model.get_feature_maps(layer_idx=1)  # (hidden2, hidden1)
+        max_l2_idx = max(0, layer2_weights.shape[0] - 1)
+        l2_idx = st.number_input(
+            f"Layer-2 neuron index (0-{max_l2_idx})",
+            min_value=0,
+            max_value=max_l2_idx,
+            value=0,
+            key="neuron_inspect_l2"
+        )
+        comp_weights = layer2_weights[l2_idx]
+        fig_l2 = plot_layer_activations(
+            comp_weights,
+            layer_name=f"Layer 2 Neuron {l2_idx} Input Weights",
+            top_k=None
+        )
+        st.plotly_chart(fig_l2, key="neuron_single_l2", config=PLOTLY_CONFIG)
+
+        top_contributors = np.argsort(np.abs(comp_weights))[-5:][::-1]
+        contributor_text = ", ".join([f"H1[{idx}] ({comp_weights[idx]:+.3f})" for idx in top_contributors])
+        st.markdown(f"""
+        **Layer 2 interpretation:** This neuron does not look at pixels directly.
+        It mixes outputs from Layer 1 detectors.
+
+        Top contributors: {contributor_text}
+        """)
 
 section_divider()
 
@@ -433,7 +550,7 @@ section_header("Watch a Digit Flow Through", "Layer-by-layer activation inspecti
 
 st.markdown(f"""
 Select a digit below to watch its pixel values propagate through the network:  
-**Input (784) → Hidden Layer 1 (128) → Hidden Layer 2 (64) → Output (10)**
+**Input (784) → Hidden Layer 1 ({model.hidden1}) → Hidden Layer 2 ({model.hidden2}) → Output (10)**
 
 At each layer, only a subset of neurons will "fire" (have high activation). 
 The pattern of which neurons fire is the network's internal {tip("representation", "The network's internal encoding of the input at a given layer. Earlier layers detect low-level features (edges, strokes); later layers combine these into higher-level concepts (loops, curves).")} of the digit.
@@ -468,11 +585,11 @@ if 'sample_images' in training_data:
             # Layer activations flow
             fig_flow = plot_activation_flow(
                 {
-                    'Hidden 1 (128)': activations['hidden1'],
-                    'Hidden 2 (64)': activations['hidden2'],
+                    f'Hidden 1 ({model.hidden1})': activations['hidden1'],
+                    f'Hidden 2 ({model.hidden2})': activations['hidden2'],
                     'Output (10)': activations['output_probs'],
                 },
-                layer_names=['Hidden 1 (128)', 'Hidden 2 (64)', 'Output (10)']
+                layer_names=[f'Hidden 1 ({model.hidden1})', f'Hidden 2 ({model.hidden2})', 'Output (10)']
             )
             st.plotly_chart(fig_flow, key="flow_activations", config=PLOTLY_CONFIG)
 
@@ -486,11 +603,38 @@ section_divider()
 # ════════════════════════════════════════════════════════
 section_header("Draw Your Own Digit", "Test the network with your handwriting", "")
 
-CONFIDENCE_THRESHOLD = 0.70  # Below this, show uncertainty warning
-
 col_canvas, col_result = st.columns([1, 1.2])
 
 with col_canvas:
+    with st.expander("Uncertainty & OOD controls", expanded=False):
+        confidence_threshold = st.slider(
+            "Minimum confidence threshold",
+            min_value=0.50,
+            max_value=0.99,
+            value=0.80,
+            step=0.01,
+            key="mnist_confidence_threshold",
+            help="Below this, we flag the prediction as uncertain."
+        )
+        uncertainty_threshold = st.slider(
+            "Maximum entropy uncertainty",
+            min_value=0.20,
+            max_value=0.95,
+            value=0.55,
+            step=0.01,
+            key="mnist_uncertainty_threshold",
+            help="Entropy normalized to [0,1]. Higher means flatter probability distribution."
+        )
+        temperature = st.slider(
+            "Softmax temperature",
+            min_value=0.5,
+            max_value=3.0,
+            value=1.4,
+            step=0.1,
+            key="mnist_temperature",
+            help="Higher temperature flattens overconfident logits for display-time calibration."
+        )
+
     try:
         from streamlit_drawable_canvas import st_canvas
 
@@ -532,7 +676,7 @@ with col_result:
         input_image = input_image_raw
 
     if input_image is not None and np.max(input_image) > 0:
-        # Resize to 28×28
+        # Resize to 28×28 before MNIST-like preprocessing
         from PIL import Image
         if input_image.shape[0] != 28:
             pil = Image.fromarray((input_image * 255).astype(np.uint8), mode='L')
@@ -541,48 +685,57 @@ with col_result:
         else:
             img_28 = input_image
 
+        # OOD-robust preprocessing: crop, center, and normalize digit layout
+        img_processed, ink_ratio = preprocess_canvas_digit(img_28)
+
         # Show what the model sees
         col_sees, col_pred = st.columns(2)
 
         with col_sees:
             st.markdown("#### What the model sees")
-            fig_sees = plot_pixel_heatmap(img_28, title="Preprocessed 28×28")
+            fig_sees = plot_pixel_heatmap(img_processed, title="Preprocessed 28×28")
             st.plotly_chart(fig_sees, key="canvas_preprocessed", config=PLOTLY_CONFIG)
 
         with col_pred:
             # Run prediction
             # Normalize like MNIST training
-            img_normalized = (img_28 - 0.1307) / 0.3081
+            img_normalized = (img_processed - 0.1307) / 0.3081
             x_tensor = torch.FloatTensor(img_normalized).unsqueeze(0).unsqueeze(0)
 
             activations = model.get_layer_activations(x_tensor)
-            predicted = int(np.argmax(activations['output_probs']))
-            confidence = float(activations['output_probs'][predicted])
+            logits = activations['output_logits'] / max(temperature, 1e-6)
+            exp_logits = np.exp(logits - np.max(logits))
+            calibrated_probs = exp_logits / np.sum(exp_logits)
+            predicted = int(np.argmax(calibrated_probs))
+            confidence = float(calibrated_probs[predicted])
 
             # Entropy-based uncertainty
-            probs = activations['output_probs']
-            entropy = -np.sum(probs * np.log(probs + 1e-10))
+            entropy = -np.sum(calibrated_probs * np.log(calibrated_probs + 1e-10))
             max_entropy = -np.log(1.0 / 10)  # Uniform distribution entropy
             uncertainty = entropy / max_entropy  # 0 = certain, 1 = completely uncertain
 
             st.markdown(f"#### Prediction: **{predicted}**")
             st.markdown(f"Confidence: **{confidence:.1%}**")
+            st.caption(f"Ink coverage after preprocessing: {ink_ratio:.1%}")
 
-            # Confidence threshold warning
-            if confidence < CONFIDENCE_THRESHOLD:
+            # Confidence + entropy + low-ink OOD warnings
+            if (confidence < confidence_threshold) or (uncertainty > uncertainty_threshold) or (ink_ratio < 0.01):
                 st.warning(f"""
-                **The model is uncertain** (confidence {confidence:.1%} < {CONFIDENCE_THRESHOLD:.0%} threshold).  
-                This doesn't look like a clear digit to the network. 
-                Try drawing more clearly or with thicker strokes.
+                **The model is uncertain / potentially out-of-distribution.**
+
+                - Confidence: {confidence:.1%} (threshold {confidence_threshold:.0%})
+                - Entropy uncertainty: {uncertainty:.1%} (threshold {uncertainty_threshold:.0%})
+                - Ink coverage: {ink_ratio:.1%}
+
+                Try writing a single centered digit with continuous strokes.
                 
                 *Note: Neural networks always produce a prediction (softmax forces probabilities to sum to 1), 
-                even for random scribbles. Low confidence is the best signal we have for out-of-distribution inputs.*
+                even for random scribbles. We therefore combine confidence + entropy + input quality checks.*
                 """)
-            
-            if uncertainty > 0.5:
-                st.caption(f"Entropy: {entropy:.2f} / {max_entropy:.2f} = {uncertainty:.1%} uncertainty")
 
-            fig_probs = plot_output_probabilities(activations['output_probs'], predicted)
+            st.caption(f"Entropy: {entropy:.2f} / {max_entropy:.2f} = {uncertainty:.1%} uncertainty")
+
+            fig_probs = plot_output_probabilities(calibrated_probs, predicted)
             st.plotly_chart(fig_probs, key="canvas_probs", config=PLOTLY_CONFIG)
     else:
         st.info("Draw a digit on the canvas (or upload an image) to see the network classify it in real-time.")

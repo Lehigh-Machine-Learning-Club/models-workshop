@@ -1,9 +1,9 @@
 """
 MNIST Training & Architecture Comparison Script.
 
-Trains both architectures:
-  - Small: 784 → 64 → 10  (1 hidden layer)
-  - Large: 784 → 128 → 64 → 10  (2 hidden layers)
+ Trains both architectures:
+  - Baseline: 784 → 64 → 10  (1 hidden layer)
+  - Compact Deep: 784 → 16 → 16 → 10  (2 hidden layers, interpretability-first)
 
 Compares accuracy, training time, and parameter count.
 Saves the winner's weights + training history.
@@ -31,7 +31,8 @@ import numpy as np
 from src.mnist_mlp import MNIST_MLP, MNIST_MLP_Small
 
 
-def train_model(model, train_loader, test_loader, epochs=15, lr=0.001, device='cpu'):
+def train_model(model, train_loader, test_loader, epochs=15, lr=0.001, device='cpu',
+                l1_lambda=0.0, l1_target='none'):
     """Train a model and return training history."""
     model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -58,7 +59,16 @@ def train_model(model, train_loader, test_loader, epochs=15, lr=0.001, device='c
             
             optimizer.zero_grad()
             outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
+            ce_loss = criterion(outputs, batch_y)
+            l1_penalty = torch.tensor(0.0, device=device)
+            if l1_lambda > 0:
+                if l1_target == 'fc1':
+                    l1_penalty = model.fc1.weight.abs().mean()
+                elif l1_target == 'all':
+                    penalties = [p.abs().mean() for p in model.parameters() if p.requires_grad and p.ndim >= 2]
+                    if penalties:
+                        l1_penalty = torch.stack(penalties).mean()
+            loss = ce_loss + (l1_lambda * l1_penalty)
             loss.backward()
             optimizer.step()
             
@@ -130,6 +140,10 @@ def main():
     parser.add_argument('--batch-size', type=int, default=128, help='Batch size')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--quick-test', action='store_true', help='Quick test with 2 epochs')
+    parser.add_argument('--l1-lambda', type=float, default=0.0,
+                        help='Optional L1 regularization strength (default: 0.0 = disabled)')
+    parser.add_argument('--l1-target', type=str, default='none', choices=['none', 'fc1', 'all'],
+                        help='Where to apply L1 regularization when enabled')
     args = parser.parse_args()
     
     if args.quick_test:
@@ -144,6 +158,7 @@ def main():
     print("MNIST MLP Training & Architecture Comparison")
     print("="*60)
     print(f"\nDownloading/loading MNIST dataset...")
+    print(f"L1 regularization: lambda={args.l1_lambda} target={args.l1_target}")
     
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -163,7 +178,7 @@ def main():
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     print(f"Device: {device}")
     
-    # ---- Train Small Model ----
+    # ---- Train Baseline Model ----
     print(f"\n{'='*60}")
     print("Model A: MNIST_MLP_Small (784 → 64 → 10)")
     model_small = MNIST_MLP_Small(hidden_size=64)
@@ -172,18 +187,20 @@ def main():
     print(f"{'='*60}")
     
     history_small = train_model(model_small, train_loader, test_loader, 
-                                 epochs=args.epochs, lr=args.lr, device=device)
+                                 epochs=args.epochs, lr=args.lr, device=device,
+                                 l1_lambda=args.l1_lambda, l1_target=args.l1_target)
     
-    # ---- Train Large Model ----
+    # ---- Train Compact-Deep Model ----
     print(f"\n{'='*60}")
-    print("Model B: MNIST_MLP (784 → 128 → 64 → 10)")
-    model_large = MNIST_MLP(hidden1=128, hidden2=64)
+    print("Model B: MNIST_MLP (784 → 16 → 16 → 10)")
+    model_large = MNIST_MLP(hidden1=16, hidden2=16)
     n_params_large = sum(p.numel() for p in model_large.parameters())
     print(f"Parameters: {n_params_large:,}")
     print(f"{'='*60}")
     
     history_large = train_model(model_large, train_loader, test_loader,
-                                 epochs=args.epochs, lr=args.lr, device=device)
+                                 epochs=args.epochs, lr=args.lr, device=device,
+                                 l1_lambda=args.l1_lambda, l1_target=args.l1_target)
     
     # ---- Comparison ----
     print(f"\n{'='*60}")
@@ -193,14 +210,16 @@ def main():
     comparison = {
         'small': {
             'architecture': '784 → 64 → 10',
+            'regularization': {'l1_lambda': args.l1_lambda, 'l1_target': args.l1_target},
             'parameters': n_params_small,
             'final_test_acc': history_small['test_acc'][-1],
             'final_test_loss': history_small['test_loss'][-1],
             'avg_epoch_time': np.mean(history_small['epoch_times']),
             'total_time': sum(history_small['epoch_times']),
         },
-        'large': {
-            'architecture': '784 → 128 → 64 → 10',
+        'compact': {
+            'architecture': '784 → 16 → 16 → 10',
+            'regularization': {'l1_lambda': args.l1_lambda, 'l1_target': args.l1_target},
             'parameters': n_params_large,
             'final_test_acc': history_large['test_acc'][-1],
             'final_test_loss': history_large['test_loss'][-1],
@@ -209,27 +228,27 @@ def main():
         }
     }
     
-    print(f"{'Metric':<25} {'Small (784→64→10)':<25} {'Large (784→128→64→10)':<25}")
+    print(f"{'Metric':<25} {'Baseline (784→64→10)':<25} {'Compact (784→16→16→10)':<25}")
     print("-"*75)
     print(f"{'Parameters':<25} {n_params_small:<25,} {n_params_large:<25,}")
     print(f"{'Test Accuracy':<25} {history_small['test_acc'][-1]*100:<25.2f} {history_large['test_acc'][-1]*100:<25.2f}")
     print(f"{'Test Loss':<25} {history_small['test_loss'][-1]:<25.4f} {history_large['test_loss'][-1]:<25.4f}")
     print(f"{'Avg Epoch Time (s)':<25} {np.mean(history_small['epoch_times']):<25.2f} {np.mean(history_large['epoch_times']):<25.2f}")
     
-    # Save the primary model (large)
+    # Save the primary model (compact deep)
     # Move model to CPU for saving
     model_large = model_large.cpu()
     model_large.eval()
     model_path = os.path.join(models_dir, 'mnist_mlp.pt')
     torch.save(model_large.state_dict(), model_path)
-    print(f"\n✓ Large model saved to {model_path}")
+    print(f"\n✓ Compact model saved to {model_path}")
     
     # Save training history
     history_path = os.path.join(models_dir, 'training_history.json')
     with open(history_path, 'w') as f:
         json.dump({
             'small': history_small,
-            'large': history_large,
+            'compact': history_large,
         }, f, indent=2)
     print(f"✓ Training history saved to {history_path}")
     
@@ -283,7 +302,7 @@ def main():
     print(f"✓ Misclassified examples saved ({len(wrong_indices)} samples)")
     
     print(f"\n{'='*60}")
-    print(f"DONE! Winner: Large model with {history_large['test_acc'][-1]*100:.2f}% test accuracy")
+    print(f"DONE! Primary model: Compact 784→16→16→10 with {history_large['test_acc'][-1]*100:.2f}% test accuracy")
     print(f"{'='*60}")
 
 

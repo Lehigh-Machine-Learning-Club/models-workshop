@@ -358,30 +358,34 @@ def plot_architecture_comparison(comparison_data):
     """
     Side-by-side comparison chart of two architectures.
     """
-    small = comparison_data['small']
-    large = comparison_data['large']
+    keys = list(comparison_data.keys())
+    if len(keys) < 2:
+        raise ValueError("comparison_data must contain at least two model entries.")
+    k1, k2 = keys[0], keys[1]
+    model_1 = comparison_data[k1]
+    model_2 = comparison_data[k2]
     
     metrics = ['Parameters', 'Test Accuracy (%)', 'Test Loss', 'Avg Epoch Time (s)']
-    small_vals = [
-        small['parameters'],
-        small['final_test_acc'] * 100,
-        small['final_test_loss'],
-        small['avg_epoch_time'],
+    model_1_vals = [
+        model_1['parameters'],
+        model_1['final_test_acc'] * 100,
+        model_1['final_test_loss'],
+        model_1['avg_epoch_time'],
     ]
-    large_vals = [
-        large['parameters'],
-        large['final_test_acc'] * 100,
-        large['final_test_loss'],
-        large['avg_epoch_time'],
+    model_2_vals = [
+        model_2['parameters'],
+        model_2['final_test_acc'] * 100,
+        model_2['final_test_loss'],
+        model_2['avg_epoch_time'],
     ]
     
     fig = make_subplots(rows=1, cols=4, subplot_titles=metrics)
     
-    for i, (metric, sv, lv) in enumerate(zip(metrics, small_vals, large_vals)):
+    for i, (metric, v1, v2) in enumerate(zip(metrics, model_1_vals, model_2_vals)):
         fig.add_trace(go.Bar(
-            x=['Small', 'Large'], y=[sv, lv],
+            x=[k1.title(), k2.title()], y=[v1, v2],
             marker_color=['#FFD93D', '#6C63FF'],
-            text=[f"{sv:.2f}", f"{lv:.2f}"],
+            text=[f"{v1:.2f}", f"{v2:.2f}"],
             textposition='outside',
             showlegend=False,
         ), row=1, col=i+1)
@@ -401,41 +405,48 @@ def plot_training_curves(history_data):
     Training loss/accuracy curves for comparison.
     
     Args:
-        history_data: dict with 'small' and 'large' keys, each containing
+        history_data: dict with two model keys, each containing
                       'train_loss', 'train_acc', 'test_loss', 'test_acc' lists
     """
+    keys = list(history_data.keys())
+    if len(keys) < 2:
+        raise ValueError("history_data must contain at least two model runs.")
+    k1, k2 = keys[0], keys[1]
+    run_1 = history_data[k1]
+    run_2 = history_data[k2]
+
     fig = make_subplots(
         rows=1, cols=2,
         subplot_titles=['Loss', 'Accuracy'],
     )
     
-    epochs_small = list(range(1, len(history_data['small']['test_loss']) + 1))
-    epochs_large = list(range(1, len(history_data['large']['test_loss']) + 1))
+    epochs_1 = list(range(1, len(run_1['test_loss']) + 1))
+    epochs_2 = list(range(1, len(run_2['test_loss']) + 1))
     
     # Loss curves
     fig.add_trace(go.Scatter(
-        x=epochs_small, y=history_data['small']['test_loss'],
-        mode='lines', name='Small (test)',
+        x=epochs_1, y=run_1['test_loss'],
+        mode='lines', name=f'{k1.title()} (test)',
         line=dict(color='#FFD93D', width=2),
     ), row=1, col=1)
     
     fig.add_trace(go.Scatter(
-        x=epochs_large, y=history_data['large']['test_loss'],
-        mode='lines', name='Large (test)',
+        x=epochs_2, y=run_2['test_loss'],
+        mode='lines', name=f'{k2.title()} (test)',
         line=dict(color='#6C63FF', width=2),
     ), row=1, col=1)
     
     # Accuracy curves
     fig.add_trace(go.Scatter(
-        x=epochs_small, y=[a * 100 for a in history_data['small']['test_acc']],
-        mode='lines', name='Small (test)',
+        x=epochs_1, y=[a * 100 for a in run_1['test_acc']],
+        mode='lines', name=f'{k1.title()} (test)',
         line=dict(color='#FFD93D', width=2, dash='dash'),
         showlegend=False,
     ), row=1, col=2)
     
     fig.add_trace(go.Scatter(
-        x=epochs_large, y=[a * 100 for a in history_data['large']['test_acc']],
-        mode='lines', name='Large (test)',
+        x=epochs_2, y=[a * 100 for a in run_2['test_acc']],
+        mode='lines', name=f'{k2.title()} (test)',
         line=dict(color='#6C63FF', width=2, dash='dash'),
         showlegend=False,
     ), row=1, col=2)
