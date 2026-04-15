@@ -253,48 +253,110 @@ with col_arch_viz:
     st.plotly_chart(fig_init_net, key="init_network", config={'displayModeBar': False})
     st.caption("The 2-3-1 network with random initial weights (before training). Edge thickness = weight magnitude, color = sign.")
 
-# ── B.4: Forward + Backward Pass ──
+# ── B.4: Forward pass → Cost → Gradient Descent → Backprop ──
 st.markdown("---")
 
-col_forward, col_backward = st.columns([1, 1])
+col_forward, col_cost_intro = st.columns([1, 1])
 
 with col_forward:
-    st.markdown("#### The Forward Pass")
-    st.markdown("Data flows left → right through the network:")
+    st.markdown("#### Step 1: The Forward Pass")
+    st.markdown("Data flows left → right through the network to produce a probability:")
 
-    math_block(r"Z_1 = X \cdot W_1 + b_1", "Multiply inputs by weights, add bias → 'pre-activation'")
-    math_block(r"A_1 = f(Z_1)", "Apply the activation function (the non-linear magic)")
-    math_block(r"Z_2 = A_1 \cdot W_2 + b_2", "Hidden activations → output pre-activation")
-    math_block(r"\hat{y} = \sigma(Z_2)", "Sigmoid squashes output to a probability [0, 1]")
-    
+    math_block(r"Z_1 = X \cdot W_1 + b_1", "Multiply inputs by weights, add bias → hidden pre-activation")
+    math_block(r"A_1 = f(Z_1)", "Apply non-linearity in the hidden layer")
+    math_block(r"Z_2 = A_1 \cdot W_2 + b_2", "Hidden activations feed into output neuron")
+    math_block(r"\hat{y} = \sigma(Z_2)", "Sigmoid squashes output to a probability in [0, 1]")
+
     st.markdown(f"""
-    The {tip("learning rate", "Controls how big each weight update step is. Too small = slow learning (takes forever to converge). Too large = overshooting (bounces past the optimum and may diverge).")} (α) 
-    determines how aggressively we update. Once training is done (all iterations complete), 
-    we use the **same forward pass** for {tip("inference", "Using the trained model to make predictions on new, unseen data. No backward pass needed — just forward propagation through the frozen weights.")}: 
-    feed new data through the frozen weights to get predictions.
+    Once training is done, we use this exact same forward pass for
+    {tip("inference", "Using the trained model to make predictions on new, unseen data. No backward pass needed — just forward propagation through frozen weights.")}.
     """, unsafe_allow_html=True)
 
-with col_backward:
-    st.markdown("#### The Backward Pass (Backpropagation)")
-    st.markdown("After computing the prediction, we measure the error and update weights:")
+with col_cost_intro:
+    st.markdown("#### Step 2: Turn Error Into a Single Number (Cost)")
+    st.markdown("""
+    A prediction by itself is not enough. We need one scalar number that says:
+    **"How bad are the model's predictions right now?"**
+    """)
 
     math_block(
         r"\mathcal{L} = -\frac{1}{N}\sum\left[y\log(\hat{y}) + (1-y)\log(1-\hat{y})\right]",
-        "Binary Cross-Entropy Loss — penalizes confident wrong predictions heavily"
+        "Binary Cross-Entropy (BCE): small when predictions match labels, large when confidently wrong"
     )
-    
-    st.markdown("Gradients flow backward through the **chain rule**:")
-    st.latex(r"\frac{\partial \mathcal{L}}{\partial W} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial Z} \cdot \frac{\partial Z}{\partial W}")
-    
-    st.markdown("Then we nudge each weight in the direction that reduces loss:")
-    st.latex(r"W \leftarrow W - \alpha \cdot \frac{\partial \mathcal{L}}{\partial W}")
-    st.caption("↳ α is the learning rate — how big each gradient descent step is")
-    
+
     st.markdown("""
-    This process repeats for many **epochs** (passes through the full dataset). 
-    After hundreds or thousands of epochs, the weights converge to values that produce 
-    an accurate curved decision boundary.
+    This scalar objective is our optimization target. Training now becomes:
+    **find parameter values that make this cost as low as possible**.
     """)
+
+st.markdown("---")
+st.markdown("#### Why Cost Functions Matter")
+
+col_cost_img, col_cost_text = st.columns([1.25, 1])
+
+with col_cost_img:
+    cost_img_path = os.path.join(ASSETS_DIR, "5. NN_Cost.png")
+    if os.path.exists(cost_img_path):
+        st.image(
+            cost_img_path,
+            caption="Comparing the prediction vector with the true one-hot target produces a numerical cost."
+        )
+    else:
+        st.info("Cost function illustration not found — place it at `assets/5. NN_Cost.png`")
+
+with col_cost_text:
+    st.markdown(f"""
+    Intuition:
+    - The network outputs a full vector of probabilities.
+    - The true label is represented as a one-hot target vector.
+    - The {tip("cost function", "A function that maps model predictions and true labels to a single scalar value that measures how wrong the model is. Lower is better.")} compares those two vectors.
+
+    If the model puts high probability on the wrong class, cost jumps up.
+    If it puts high probability on the correct class, cost goes down.
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
+st.markdown("#### Step 3: Gradient Descent — Moving Down the Cost Landscape")
+
+st.markdown(f"""
+Imagine each parameter setting as a point on a giant landscape where height = cost.
+Our goal is to keep stepping downhill until we reach a low valley.
+
+The {tip("gradient", "The vector of partial derivatives of the cost with respect to each parameter. It points in the direction of steepest increase in cost.")} tells us the local slope, so we step in the opposite direction:
+""", unsafe_allow_html=True)
+st.latex(r"W \leftarrow W - \alpha \cdot \frac{\partial \mathcal{L}}{\partial W}")
+st.caption("α = learning rate. Too small: very slow. Too large: overshoot and bounce around.")
+
+col_gd1, col_gd2 = st.columns(2)
+
+with col_gd1:
+    gd_img_1_path = os.path.join(ASSETS_DIR, "6. NN_GD1.png")
+    if os.path.exists(gd_img_1_path):
+        st.image(gd_img_1_path, caption="Each location in parameter space has a different cost value.")
+    else:
+        st.info("Gradient descent illustration not found — place it at `assets/6. NN_GD1.png`")
+
+with col_gd2:
+    gd_img_2_path = os.path.join(ASSETS_DIR, "7. NN_GD2.png")
+    if os.path.exists(gd_img_2_path):
+        st.image(gd_img_2_path, caption="The local tangent/slope tells us which direction reduces cost fastest.")
+    else:
+        st.info("Gradient slope illustration not found — place it at `assets/7. NN_GD2.png`")
+
+st.markdown("---")
+st.markdown("#### Step 4: The Backward Pass (Backpropagation)")
+st.markdown("""
+Gradient descent tells us *what* we need (gradients).  
+Backpropagation tells us *how to compute them efficiently* for every weight and bias.
+""")
+
+st.markdown("Gradients flow backward through the network via the chain rule:")
+st.latex(r"\frac{\partial \mathcal{L}}{\partial W} = \frac{\partial \mathcal{L}}{\partial \hat{y}} \cdot \frac{\partial \hat{y}}{\partial Z} \cdot \frac{\partial Z}{\partial W}")
+
+st.markdown("""
+This loop repeats for many **epochs** (full passes over the dataset).  
+As cost decreases, the decision boundary bends into a shape that separates safe vs poisonous fruits.
+""")
 
 # ── B.5: General NN Pseudocode ──
 st.markdown("---")

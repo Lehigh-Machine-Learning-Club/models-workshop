@@ -7,6 +7,10 @@ from plotly.subplots import make_subplots
 import numpy as np
 
 # ---- Shared Color Palette ----
+# High-contrast text for light plot backgrounds. Streamlit `theme.base = "dark"` can otherwise
+# leave Plotly using light gray tick/axis text on our white / #fafafa figures.
+TEXT_ON_LIGHT = '#1a1a1a'
+
 COLORS = {
     'primary': '#6C63FF',
     'secondary': '#FF6584',
@@ -16,11 +20,26 @@ COLORS = {
     'negative_weight': 'rgba(255, 101, 132, 0.7)', # Red for negative weights
     'bg_dark': '#0E1117',
     'bg_card': '#1a1a2e',
-    'text': '#e0e0e0',
-    'grid': 'rgba(255,255,255,0.05)',
+    'text': TEXT_ON_LIGHT,
+    'grid': 'rgba(0, 0, 0, 0.08)',
     'node_input': '#a8a4e6',
     'node_output': '#64b5f6',
 }
+
+
+def _finalize_light_figure(fig):
+    """Keep titles, ticks, and subplot labels readable on white/light plot areas."""
+    fig.update_layout(template='plotly_white')
+    fig.update_xaxes(
+        tickfont=dict(color=TEXT_ON_LIGHT),
+        title_font=dict(color=TEXT_ON_LIGHT),
+    )
+    fig.update_yaxes(
+        tickfont=dict(color=TEXT_ON_LIGHT),
+        title_font=dict(color=TEXT_ON_LIGHT),
+    )
+    fig.for_each_annotation(lambda a: a.update(font=dict(color=TEXT_ON_LIGHT)))
+    return fig
 
 # Diverging colorscale: safe (blue/teal) → boundary → poison (red/pink)
 DECISION_COLORSCALE = [
@@ -57,7 +76,11 @@ def plot_decision_boundary(mlp_model, X, y, activation_name, epoch, loss, accura
         colorscale=DECISION_COLORSCALE,
         opacity=0.6,
         showscale=True,
-        colorbar=dict(title="P(Poison)", thickness=12, len=0.6, x=1.02),
+        colorbar=dict(
+            title=dict(text="P(Poison)", font=dict(color=TEXT_ON_LIGHT, size=12)),
+            tickfont=dict(color=TEXT_ON_LIGHT),
+            thickness=12, len=0.6, x=1.02,
+        ),
         contours=dict(showlines=True, coloring='heatmap'),
         hoverinfo='skip'
     ))
@@ -129,7 +152,7 @@ def plot_decision_boundary(mlp_model, X, y, activation_name, epoch, loss, accura
     fig.update_layout(
         title=dict(
             text=f"<b>Decision Boundary</b>  •  Epoch {epoch}  •  Loss {loss:.4f}  •  Acc {accuracy*100:.1f}%",
-            font=dict(size=14, color='#333')
+            font=dict(size=14, color=TEXT_ON_LIGHT)
         ),
         xaxis_title="Spikiness (Feature 1)",
         yaxis_title="Spottiness (Feature 2)",
@@ -137,15 +160,15 @@ def plot_decision_boundary(mlp_model, X, y, activation_name, epoch, loss, accura
         margin=dict(l=50, r=60, t=50, b=50),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
         legend=dict(
             orientation='h', yanchor='bottom', y=1.02,
-            xanchor='right', x=1, font=dict(size=11, color='#333')
+            xanchor='right', x=1, font=dict(size=11, color=TEXT_ON_LIGHT)
         ),
         xaxis=dict(gridcolor=COLORS['grid']),
         yaxis=dict(gridcolor=COLORS['grid']),
     )
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_decision_boundary_from_grid(boundary_Z, grid_x, grid_y, X, y,
@@ -167,8 +190,11 @@ def plot_decision_boundary_from_grid(boundary_Z, grid_x, grid_y, X, y,
         colorscale=DECISION_COLORSCALE,
         opacity=0.6,
         showscale=True,
-        colorbar=dict(title="P(Poison)", thickness=12, len=0.6, x=1.02,
-                      tickfont=dict(color='#333')),
+        colorbar=dict(
+            title=dict(text="P(Poison)", font=dict(color=TEXT_ON_LIGHT, size=12)),
+            tickfont=dict(color=TEXT_ON_LIGHT),
+            thickness=12, len=0.6, x=1.02,
+        ),
         contours=dict(showlines=True, coloring='heatmap'),
         hoverinfo='skip'
     ))
@@ -225,7 +251,7 @@ def plot_decision_boundary_from_grid(boundary_Z, grid_x, grid_y, X, y,
     fig.update_layout(
         title=dict(
             text=f"<b>Decision Boundary</b>  \u2022  Epoch {epoch}  \u2022  Loss {loss:.4f}  \u2022  Acc {accuracy*100:.1f}%",
-            font=dict(size=14, color='#333')
+            font=dict(size=14, color=TEXT_ON_LIGHT)
         ),
         xaxis_title="Spikiness (Feature 1)",
         yaxis_title="Spottiness (Feature 2)",
@@ -233,15 +259,15 @@ def plot_decision_boundary_from_grid(boundary_Z, grid_x, grid_y, X, y,
         margin=dict(l=50, r=60, t=50, b=50),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
         legend=dict(
             orientation='h', yanchor='bottom', y=1.02,
-            xanchor='right', x=1, font=dict(size=11, color='#333')
+            xanchor='right', x=1, font=dict(size=11, color=TEXT_ON_LIGHT)
         ),
         xaxis=dict(gridcolor=COLORS['grid']),
         yaxis=dict(gridcolor=COLORS['grid']),
     )
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_network_graph(mlp_model, X_sample, activation_name):
@@ -341,7 +367,7 @@ def plot_network_graph(mlp_model, X_sample, activation_name):
                 line=dict(color=border_color, width=2.5),
             ),
             text=f"<b>{label}</b><br>{val:.3f}",
-            textfont=dict(size=11, color='#222'),
+            textfont=dict(size=11, color=TEXT_ON_LIGHT),
             textposition='middle center',
             hovertemplate=f"<b>{label}</b><br>Value: {val:.4f}<extra></extra>",
             showlegend=False
@@ -377,16 +403,16 @@ def plot_network_graph(mlp_model, X_sample, activation_name):
     )
     
     fig.update_layout(
-        title=dict(text="<b>Network State</b>  •  Live Activations", font=dict(size=14, color='#333')),
+        title=dict(text="<b>Network State</b>  •  Live Activations", font=dict(size=14, color=TEXT_ON_LIGHT)),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.3, 2.3]),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.12, 1.0]),
         height=480,
         margin=dict(l=10, r=10, t=50, b=30),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
     )
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_activation_gallery():
@@ -446,7 +472,7 @@ def plot_activation_gallery():
         margin=dict(l=30, r=20, t=40, b=20),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(size=10, color='#333'),
+        font=dict(size=10, color=TEXT_ON_LIGHT),
     )
     
     # Update all axes
@@ -454,7 +480,7 @@ def plot_activation_gallery():
         fig.update_xaxes(range=[-5, 5], showgrid=True, gridcolor='rgba(0,0,0,0.06)', row=(i-1)//5+1, col=(i-1)%5+1)
         fig.update_yaxes(showgrid=True, gridcolor='rgba(0,0,0,0.06)', row=(i-1)//5+1, col=(i-1)%5+1)
     
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_activation_curve(activation_name):
@@ -483,16 +509,16 @@ def plot_activation_curve(activation_name):
     
     short_name = activation_name.split('(')[0].strip()
     fig.update_layout(
-        title=dict(text=f"<b>ƒ(x) = {short_name}</b>", font=dict(size=12, color='#333')),
+        title=dict(text=f"<b>ƒ(x) = {short_name}</b>", font=dict(size=12, color=TEXT_ON_LIGHT)),
         height=180,
         margin=dict(l=30, r=10, t=35, b=20),
         xaxis=dict(range=[-5, 5], showgrid=False, title=''),
         yaxis=dict(showgrid=False, title=''),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
     )
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_loss_curve(loss_history, accuracy_history, epoch_labels=None):
@@ -506,10 +532,10 @@ def plot_loss_curve(loss_history, accuracy_history, epoch_labels=None):
         fig.update_layout(
             title="Training Curve (waiting for data...)",
             height=250, margin=dict(l=40, r=40, t=40, b=30),
-            font=dict(color='#333'),
+            font=dict(color=TEXT_ON_LIGHT),
             paper_bgcolor='white',
         )
-        return fig
+        return _finalize_light_figure(fig)
     
     if epoch_labels is not None:
         epochs = list(epoch_labels)
@@ -531,20 +557,20 @@ def plot_loss_curve(loss_history, accuracy_history, epoch_labels=None):
     ), secondary_y=True)
     
     fig.update_layout(
-        title=dict(text="<b>Training Progress</b>", font=dict(size=13, color='#333')),
+        title=dict(text="<b>Training Progress</b>", font=dict(size=13, color=TEXT_ON_LIGHT)),
         height=250,
         margin=dict(l=50, r=50, t=40, b=30),
         legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1,
-                    font=dict(color='#333')),
+                    font=dict(color=TEXT_ON_LIGHT)),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
     )
     fig.update_yaxes(title_text="Loss", secondary_y=False, gridcolor='rgba(0,0,0,0.06)')
     fig.update_yaxes(title_text="Accuracy", secondary_y=True, range=[0, 1.05], gridcolor='rgba(0,0,0,0.06)')
     fig.update_xaxes(title_text="Epoch", gridcolor='rgba(0,0,0,0.06)')
     
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_neuron_boundaries(mlp_model, X, y, activation_name):
@@ -606,10 +632,10 @@ def plot_neuron_boundaries(mlp_model, X, y, activation_name):
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
         showlegend=False,
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
     )
     
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_linear_failure(X, y, linear_model=None):
@@ -672,17 +698,17 @@ def plot_linear_failure(X, y, linear_model=None):
     fig.update_layout(
         title=dict(
             text=f"<b>Linear Model (Logistic Regression)</b>  •  Acc: {accuracy*100:.1f}%  •  The straight line can't bend!",
-            font=dict(size=13, color='#333')
+            font=dict(size=13, color=TEXT_ON_LIGHT)
         ),
         xaxis_title="Spikiness", yaxis_title="Spottiness",
         height=400,
         margin=dict(l=50, r=20, t=50, b=50),
         plot_bgcolor='#fafafa',
         paper_bgcolor='white',
-        font=dict(color='#333'),
-        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, font=dict(color='#333')),
+        font=dict(color=TEXT_ON_LIGHT),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1, font=dict(color=TEXT_ON_LIGHT)),
     )
-    return fig
+    return _finalize_light_figure(fig)
 
 
 def plot_sample_flow(mlp_model, x_single, activation_name, sample_idx=0, y_true=None):
@@ -718,9 +744,9 @@ def plot_sample_flow(mlp_model, x_single, activation_name, sample_idx=0, y_true=
                 x=[stage_x[s_idx]], y=[yp],
                 mode='markers+text',
                 marker=dict(size=40, color=colors_per_stage[s_idx], 
-                           line=dict(color='#333', width=1.5)),
+                           line=dict(color=TEXT_ON_LIGHT, width=1.5)),
                 text=f"{val:.3f}",
-                textfont=dict(size=10, color='#222'),
+                textfont=dict(size=10, color=TEXT_ON_LIGHT),
                 textposition='middle center',
                 showlegend=False,
                 hovertemplate=f"<b>{stage}</b>[{v_idx}] = {val:.4f}<extra></extra>"
@@ -760,13 +786,13 @@ def plot_sample_flow(mlp_model, x_single, activation_name, sample_idx=0, y_true=
         title_extra = f"  •  Predicted: {pred}  •  Actual: {actual}  {correct}"
     
     fig.update_layout(
-        title=dict(text=f"<b>Sample #{sample_idx} Flow</b>{title_extra}", font=dict(size=13, color='#333')),
+        title=dict(text=f"<b>Sample #{sample_idx} Flow</b>{title_extra}", font=dict(size=13, color=TEXT_ON_LIGHT)),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.5, 4.5]),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, range=[-0.15, 0.95]),
         height=320,
         margin=dict(l=10, r=10, t=45, b=30),
         plot_bgcolor='white',
         paper_bgcolor='white',
-        font=dict(color='#333'),
+        font=dict(color=TEXT_ON_LIGHT),
     )
-    return fig
+    return _finalize_light_figure(fig)
